@@ -190,7 +190,7 @@
             else if (dMat.getDay() === 0) dMat.setDate(dMat.getDate() + 1);
             dMat.setHours(0,0,0,0);
 
-            let rate = (dMat < cutOff) ? 4.66 : 2.9955; // Profit Rates Locked
+            let rate = (dMat < cutOff) ? 4.66 : 2.99589; // Profit Rates Locked
             let profitAmt = (item.amount * (rate / 100));
             
             let diff = Math.round((dMat - today) / 86400000);
