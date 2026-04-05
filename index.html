@@ -41,7 +41,7 @@
         .tax-year-container { margin: 25px 15px; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
         .tax-year-header { background: #f8f9fa; padding: 15px; font-weight: bold; color: var(--primary); border-bottom: 1px solid #eee; }
         .table-wrapper { overflow-x: auto; }
-        table { width: 100%; border-collapse: collapse; min-width: 500px; }
+        table { width: 100%; border-collapse: collapse; min-width: 550px; }
         th { background: #f1f4f7; color: #666; padding: 12px; font-size: 11px; text-align: left; text-transform: uppercase; }
         td { padding: 14px 12px; border-bottom: 1px solid #f1f1f1; font-size: 13.5px; }
         
@@ -204,7 +204,8 @@
 
         Object.keys(grouped).sort().reverse().forEach(year => {
             let yActive = 0, yMaturedProfit = 0, yPendingProfit = 0;
-            let html = `<div class="tax-year-container"><div class="tax-year-header">${year}</div><div class="table-wrapper"><table><thead><tr><th>Date</th><th>Amount</th><th>Maturity</th><th>Status</th><th>Profit</th><th></th></tr></thead><tbody>`;
+            // Added "Day" Header here
+            let html = `<div class="tax-year-container"><div class="tax-year-header">${year}</div><div class="table-wrapper"><table><thead><tr><th>Date</th><th>Amount</th><th>Maturity</th><th>Status</th><th>Day</th><th>Profit</th><th></th></tr></thead><tbody>`;
             
             // SORTED: Late maturity on top
             grouped[year].sort((a, b) => b.dMat - a.dMat).forEach(r => {
@@ -212,7 +213,12 @@
                 else { yMaturedProfit += r.profitAmt; }
 
                 let badge = r.diff > 0 ? `<span class="badge running">${r.diff} Days</span>` : (r.diff === 0 ? `<span class="badge today-badge">Today!</span>` : `<span class="badge matured">Matured</span>`);
-                html += `<tr><td>${new Date(r.date).toLocaleDateString('en-GB')}</td><td>${r.amount.toLocaleString()}</td><td>${r.dMat.toLocaleDateString('en-GB',{day:'2-digit',month:'short'})}</td><td>${badge}</td><td>${r.profitAmt.toFixed(0)}</td><td><span class="del-icon" onclick="confirmDelete(${r.id})">✕</span></td></tr>`;
+                
+                // Getting the Day Name
+                let dayName = r.dMat.toLocaleDateString('en-GB', { weekday: 'long' });
+
+                // Added Day column in the row
+                html += `<tr><td>${new Date(r.date).toLocaleDateString('en-GB')}</td><td>${r.amount.toLocaleString()}</td><td>${r.dMat.toLocaleDateString('en-GB',{day:'2-digit',month:'short'})}</td><td>${badge}</td><td>${dayName}</td><td>${r.profitAmt.toFixed(0)}</td><td><span class="del-icon" onclick="confirmDelete(${r.id})">✕</span></td></tr>`;
             });
 
             container.innerHTML += html + `</tbody></table></div><div class="year-summary-footer">
