@@ -28,9 +28,10 @@
         .user-dp { width: 40px; height: 40px; border-radius: 50%; border: 2px solid var(--accent); object-fit: cover; background: #eee; cursor: pointer; }
 
         .main-dashboard { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 15px; }
-        .main-card { padding: 20px 10px; border-radius: 12px; text-align: center; color: white; background: var(--primary); }
-        .main-card h3 { font-size: 11px; margin: 0; opacity: 0.7; text-transform: uppercase; }
-        .main-card .value { font-size: 19px; font-weight: bold; color: var(--gold); margin-top: 8px; }
+        .main-card { padding: 15px 10px; border-radius: 12px; text-align: center; color: white; background: var(--primary); display: flex; flex-direction: column; justify-content: center; }
+        .main-card h3 { font-size: 10px; margin: 0; opacity: 0.7; text-transform: uppercase; }
+        .main-card .value { font-size: 18px; font-weight: bold; color: var(--gold); margin-top: 5px; }
+        .main-card .sub-value { font-size: 11px; margin-top: 4px; opacity: 0.9; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 4px; }
         .main-card.blue { background: linear-gradient(135deg, var(--accent), #2980b9); }
 
         .form-section { margin: 0 15px; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
@@ -52,7 +53,7 @@
         .year-summary-footer { background: #fafafa; padding: 12px; display: flex; flex-direction: column; gap: 5px; font-size: 13px; border-top: 1px solid #f1f1f1; }
         .summary-line { display: flex; justify-content: space-between; align-items: center; }
         .profit-matured { color: var(--success); font-weight: bold; }
-        .profit-pending { color: #81c784; font-size: 12px; font-weight: normal; }
+        .profit-pending { color: #81c784; font-size: 12px; }
 
         .del-icon { color: var(--danger); font-size: 18px; cursor: pointer; padding: 5px; }
 
@@ -87,8 +88,15 @@
     </header>
 
     <div class="main-dashboard">
-        <div class="main-card"><h3>Matured Profit</h3><div class="value" id="grandProfit">0.00</div></div>
-        <div class="main-card blue"><h3>Active Inv</h3><div class="value" id="activeInv">0.00</div></div>
+        <div class="main-card">
+            <h3>Matured Profit</h3>
+            <div class="value" id="grandProfit">0.00</div>
+        </div>
+        <div class="main-card blue">
+            <h3>Active Invested</h3>
+            <div class="value" id="activeInv">0.00</div>
+            <div class="sub-value">Active Certificates: <span id="activeCount">0</span></div>
+        </div>
     </div>
 
     <div class="form-section">
@@ -170,7 +178,7 @@
 
     function renderTables(records) {
         const container = document.getElementById('tablesContainer'); container.innerHTML = '';
-        let grandMaturedProfit = 0, totalActiveInv = 0;
+        let grandMaturedProfit = 0, totalActiveInv = 0, activeCount = 0;
         const grouped = {};
         const today = new Date(); today.setHours(0,0,0,0);
         const cutOff = new Date('2025-06-01');
@@ -185,9 +193,10 @@
             let profitAmt = (item.amount * (rate / 100));
             
             let diff = Math.round((dMat - today) / 86400000);
-            if (diff >= 0) totalActiveInv += item.amount;
-            
-            // Core Logic: If matured, add to Grand Profit
+            if (diff >= 0) {
+                totalActiveInv += item.amount;
+                activeCount++; // Count active certificates
+            }
             if (diff <= 0) grandMaturedProfit += profitAmt;
 
             let year = (dMat.getMonth() >= 6) ? `Tax Year ${dMat.getFullYear()}-${dMat.getFullYear()+1}` : `Tax Year ${dMat.getFullYear()-1}-${dMat.getFullYear()}`;
@@ -216,6 +225,7 @@
 
         document.getElementById('grandProfit').innerText = grandMaturedProfit.toLocaleString(undefined,{minimumFractionDigits:2});
         document.getElementById('activeInv').innerText = totalActiveInv.toLocaleString();
+        document.getElementById('activeCount').innerText = activeCount; // Update count
         document.getElementById('pDate').valueAsDate = new Date();
     }
 </script>
