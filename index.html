@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>INPC Portfolio Manager - LOCKED</title>
+    <style>
+        :root { --primary: #2c3e50; --success: #27ae60; --danger: #e74c3c; --bg: #f4f7f6; --accent: #2980b9; --gold: #f1c40f; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; background-color: var(--bg); margin: 0; padding: 20px; }
+        .container { max-width: 1250px; margin: auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 8px 20px rgba(0,0,0,0.15); }
+        
+        /* Main Dashboard */
+        .main-dashboard { display: flex; gap: 20px; margin-bottom: 30px; flex-wrap: wrap; }
+        .main-card { flex: 1; min-width: 300px; background: var(--primary); color: white; padding: 25px; border-radius: 12px; text-align: center; position: relative; overflow: hidden; }
+        .main-card h3 { margin: 0; font-size: 15px; text-transform: uppercase; letter-spacing: 1px; opacity: 0.9; }
+        .main-card .value { font-size: 32px; font-weight: bold; margin-top: 10px; color: var(--gold); }
+        .main-card.blue { background: var(--accent); }
+
+        .form-section { display: flex; gap: 15px; background: #f9f9f9; padding: 20px; border-radius: 8px; margin-bottom: 25px; flex-wrap: wrap; align-items: flex-end; border: 1px solid #eee; }
+        .input-group { display: flex; flex-direction: column; flex: 1; min-width: 180px; }
+        label { font-weight: bold; margin-bottom: 6px; color: #444; }
+        input { padding: 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 16px; outline: none; }
+        input:focus { border-color: var(--success); }
+        
+        button.add-btn { background-color: var(--success); color: white; border: none; padding: 12px 30px; border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: bold; transition: 0.2s; }
+        button.add-btn:hover { background-color: #219150; }
+
+        .tax-year-container { margin-top: 40px; border-radius: 10px; border: 1px solid #ddd; overflow: hidden; background: white; }
+        .tax-year-header { background: #f1f1f1; padding: 15px 20px; font-weight: bold; color: var(--primary); font-size: 20px; border-bottom: 2px solid #ddd; }
+        
+        table { width: 100%; border-collapse: collapse; }
+        th { background-color: var(--primary); color: white; padding: 12px; text-align: left; font-size: 13px; }
+        td { padding: 12px; border-bottom: 1px solid #eee; font-size: 14px; }
+        
+        .year-summary-footer { background: #f8f9fa; padding: 15px 25px; display: flex; justify-content: flex-end; gap: 40px; border-top: 2px solid #eee; }
+        .summary-item { text-align: right; }
+        .summary-label { font-size: 12px; color: #666; font-weight: bold; text-transform: uppercase; }
+        .summary-value { font-size: 18px; font-weight: bold; color: var(--primary); margin-top: 4px; }
+        .profit-val { color: var(--success); }
+
+        .badge { padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: bold; }
+        .running { background: #e3f2fd; color: #1976d2; }
+        .matured { background: #f5f5f5; color: #999; }
+        .today-badge { background: #e8f5e9; color: #1b5e20; border: 1px solid #1b5e20; }
+        .del-btn { background: var(--danger); color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>INPC Portfolio Manager (Locked Version)</h2>
+
+    <div class="main-dashboard">
+        <div class="main-card">
+            <h3>Total All Year Profit</h3>
+            <div class="value" id="grandProfit">0.00</div>
+        </div>
+        <div class="main-card blue">
+            <h3>Total Active Investment</h3>
+            <div class="value" id="activeInv">0.00</div>
+        </div>
+    </div>
+
+    <div class="form-section">
+        <div class="input-group">
+            <label>Purchase Date</label>
+            <input type="date" id="pDate">
+        </div>
+        <div class="input-group">
+            <label>Investment Amount</label>
+            <input type="number" id="pAmount" placeholder="Amount">
+        </div>
+        <button class="add-btn" onclick="addEntry()">Add Certificate</button>
+    </div>
+
+    <div id="tablesContainer"></div>
+</div>
+
+<script>
+    window.onload = function() {
+        document.getElementById('pDate').valueAsDate = new Date();
+        renderTables();
+    };
+
+    function addEntry() {
+        const dateInput = document.getElementById('pDate').value;
+        const amountInput = document.getElementById('pAmount').value;
+        if (!dateInput || !amountInput) return alert("Data fill karein!");
+
+        const record = { id: Date.now(), date: dateInput, amount: parseFloat(amountInput) };
+        let db = JSON.parse(localStorage.getItem('inpc_locked_db')) || [];
+        db.push(record);
+        localStorage.setItem('inpc_locked_db', JSON.stringify(db));
+        document.getElementById('pAmount').value = '';
+        renderTables();
+    }
+
+    function getTaxYear(date) {
+        const d = new Date(date);
+        return (d.getMonth() >= 6) ? `Tax Year ${d.getFullYear()}-${d.getFullYear() + 1}` : `Tax Year ${d.getFullYear() - 1}-${d.getFullYear()}`;
+    }
+
+    function renderTables() {
+        const container = document.getElementById('tablesContainer');
+        const db = JSON.parse(localStorage.getItem('inpc_locked_db')) || [];
+        container.innerHTML = '';
+        
+        let overallGrandProfit = 0;
+        let overallActiveInv = 0;
+
+        const grouped = {};
+        const today = new Date();
+        today.setHours(0,0,0,0);
+        const cutOffDate = new Date('2025-06-01');
+
+        db.forEach(item => {
+            let dMat = new Date(item.date);
+            dMat.setDate(dMat.getDate() + 90);
+            if (dMat.getDay() === 6) dMat.setDate(dMat.getDate() + 2);
+            else if (dMat.getDay() === 0) dMat.setDate(dMat.getDate() + 1);
+            dMat.setHours(0,0,0,0);
+
+            let profitRate = (dMat < cutOffDate) ? (1.55333 * 3) : (0.9985 * 3);
+            let profitAmt = (item.amount * (profitRate / 100));
+            overallGrandProfit += profitAmt;
+
+            const diffDays = Math.round((dMat - today) / (1000 * 60 * 60 * 24));
+            if (diffDays >= 0) overallActiveInv += item.amount;
+
+            const taxYear = getTaxYear(dMat);
+            if (!grouped[taxYear]) grouped[taxYear] = [];
+            grouped[taxYear].push({ ...item, dMat, diffDays, profitAmt });
+        });
+
+        Object.keys(grouped).sort().reverse().forEach(year => {
+            let yearActiveInv = 0;
+            let yearTotalProfit = 0;
+
+            let tableHTML = `<div class="tax-year-container"><div class="tax-year-header">${year}</div><table><thead><tr><th>Purchase</th><th>Amount</th><th>Maturity</th><th>Day</th><th>Profit</th><th>Status</th><th>Action</th></tr></thead><tbody>`;
+
+            grouped[year].forEach(r => {
+                yearTotalProfit += r.profitAmt;
+                if (r.diffDays >= 0) yearActiveInv += r.amount;
+
+                let badge = r.diffDays > 0 ? `<span class="badge running">${r.diffDays} Days Left</span>` : (r.diffDays === 0 ? `<span class="badge today-badge">Matures Today!</span>` : `<span class="badge matured">Matured</span>`);
+
+                tableHTML += `<tr>
+                    <td>${new Date(r.date).toLocaleDateString('en-GB')}</td>
+                    <td>${r.amount.toLocaleString()}</td>
+                    <td>${r.dMat.toLocaleDateString('en-GB', {day:'2-digit', month:'short', year:'numeric'})}</td>
+                    <td>${r.dMat.toLocaleDateString('en-GB', {weekday: 'long'})}</td>
+                    <td>${r.profitAmt.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td>${badge}</td>
+                    <td><button class="del-btn" onclick="deleteEntry(${r.id})">Del</button></td>
+                </tr>`;
+            });
+
+            tableHTML += `</tbody></table>
+                <div class="year-summary-footer">
+                    <div class="summary-item">
+                        <div class="summary-label">Active Investment</div>
+                        <div class="summary-value">${yearActiveInv.toLocaleString()}</div>
+                    </div>
+                    <div class="summary-item">
+                        <div class="summary-label">Yearly Total Profit</div>
+                        <div class="summary-value profit-val">${yearTotalProfit.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                    </div>
+                </div>
+            </div>`;
+            container.innerHTML += tableHTML;
+        });
+
+        document.getElementById('grandProfit').innerText = overallGrandProfit.toLocaleString(undefined, {minimumFractionDigits: 2});
+        document.getElementById('activeInv').innerText = overallActiveInv.toLocaleString();
+    }
+
+    function deleteEntry(id) {
+        if (!confirm("Delete kar dein?")) return;
+        let db = JSON.parse(localStorage.getItem('inpc_locked_db')) || [];
+        localStorage.setItem('inpc_locked_db', JSON.stringify(db.filter(r => r.id !== id)));
+        renderTables();
+    }
+</script>
+</body>
+</html>
