@@ -1,6 +1,6 @@
 {
-  "name": "INPC Portfolio Manager",
-  "short_name": "INPC Tracker",
+  "name": "INPC Manager",
+  "short_name": "INPC Bank",
   "start_url": "index.html",
   "display": "standalone",
   "background_color": "#2c3e50",
