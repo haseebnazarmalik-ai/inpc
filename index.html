@@ -97,6 +97,7 @@
             <h3>Active Invested</h3>
             <div class="value" id="activeInv">0.00</div>
             <div class="sub-value">Active Certificates: <span id="activeCount">0</span></div>
+            <div class="sub-value">Current Month Profit: <span id="currentMonthProfit">0.00</span></div>
         </div>
     </div>
 
@@ -179,9 +180,11 @@
 
     function renderTables(records) {
         const container = document.getElementById('tablesContainer'); container.innerHTML = '';
-        let grandMaturedProfit = 0, totalActiveInv = 0, activeCount = 0;
+        let grandMaturedProfit = 0, totalActiveInv = 0, activeCount = 0, monthlyProfit = 0;
         const grouped = {};
         const today = new Date(); today.setHours(0,0,0,0);
+        const currentMonth = today.getMonth();
+        const currentYear = today.getFullYear();
         const cutOff = new Date('2025-06-01');
 
         records.forEach(item => {
@@ -190,12 +193,17 @@
             else if (dMat.getDay() === 0) dMat.setDate(dMat.getDate() + 1);
             dMat.setHours(0,0,0,0);
 
-            let rate = (dMat < cutOff) ? 4.66 : 2.99589; // Profit Rates Locked
+            let rate = (dMat < cutOff) ? 4.66 : 2.9955; // Profit Rates Locked
             let profitAmt = (item.amount * (rate / 100));
             
             let diff = Math.round((dMat - today) / 86400000);
             if (diff >= 0) { totalActiveInv += item.amount; activeCount++; }
             if (diff <= 0) grandMaturedProfit += profitAmt;
+
+            // Current Month Profit Logic
+            if (dMat.getMonth() === currentMonth && dMat.getFullYear() === currentYear) {
+                monthlyProfit += profitAmt;
+            }
 
             let year = (dMat.getMonth() >= 6) ? `Tax Year ${dMat.getFullYear()}-${dMat.getFullYear()+1}` : `Tax Year ${dMat.getFullYear()-1}-${dMat.getFullYear()}`;
             if (!grouped[year]) grouped[year] = [];
@@ -204,20 +212,15 @@
 
         Object.keys(grouped).sort().reverse().forEach(year => {
             let yActive = 0, yMaturedProfit = 0, yPendingProfit = 0;
-            // Added "Day" Header here
             let html = `<div class="tax-year-container"><div class="tax-year-header">${year}</div><div class="table-wrapper"><table><thead><tr><th>Date</th><th>Amount</th><th>Maturity</th><th>Status</th><th>Day</th><th>Profit</th><th></th></tr></thead><tbody>`;
             
-            // SORTED: Late maturity on top
             grouped[year].sort((a, b) => b.dMat - a.dMat).forEach(r => {
                 if(r.diff >= 0) { yActive += r.amount; yPendingProfit += r.profitAmt; }
                 else { yMaturedProfit += r.profitAmt; }
 
                 let badge = r.diff > 0 ? `<span class="badge running">${r.diff} Days</span>` : (r.diff === 0 ? `<span class="badge today-badge">Today!</span>` : `<span class="badge matured">Matured</span>`);
-                
-                // Getting the Day Name
                 let dayName = r.dMat.toLocaleDateString('en-GB', { weekday: 'long' });
 
-                // Added Day column in the row
                 html += `<tr><td>${new Date(r.date).toLocaleDateString('en-GB')}</td><td>${r.amount.toLocaleString()}</td><td>${r.dMat.toLocaleDateString('en-GB',{day:'2-digit',month:'short'})}</td><td>${badge}</td><td>${dayName}</td><td>${r.profitAmt.toFixed(0)}</td><td><span class="del-icon" onclick="confirmDelete(${r.id})">✕</span></td></tr>`;
             });
 
@@ -231,6 +234,7 @@
         document.getElementById('grandProfit').innerText = grandMaturedProfit.toLocaleString(undefined,{minimumFractionDigits:2});
         document.getElementById('activeInv').innerText = totalActiveInv.toLocaleString();
         document.getElementById('activeCount').innerText = activeCount;
+        document.getElementById('currentMonthProfit').innerText = monthlyProfit.toLocaleString(undefined,{minimumFractionDigits:2});
         document.getElementById('pDate').valueAsDate = new Date();
     }
 </script>
