@@ -183,8 +183,15 @@
         let grandMaturedProfit = 0, totalActiveInv = 0, activeCount = 0, monthlyProfit = 0;
         const grouped = {};
         const today = new Date(); today.setHours(0,0,0,0);
-        const currentMonth = today.getMonth();
-        const currentYear = today.getFullYear();
+        
+        // Logical logic for 26th to 25th Cycle
+        let cycleMonth = today.getMonth();
+        let cycleYear = today.getFullYear();
+        if (today.getDate() >= 26) {
+            cycleMonth = (cycleMonth + 1) % 12;
+            if (cycleMonth === 0) cycleYear++;
+        }
+
         const cutOff = new Date('2025-06-01');
 
         records.forEach(item => {
@@ -200,8 +207,21 @@
             if (diff >= 0) { totalActiveInv += item.amount; activeCount++; }
             if (diff <= 0) grandMaturedProfit += profitAmt;
 
-            // Current Month Profit Logic
-            if (dMat.getMonth() === currentMonth && dMat.getFullYear() === currentYear) {
+            // Current Cycle Profit Logic (26 to 25)
+            let mMonth = dMat.getMonth();
+            let mYear = dMat.getFullYear();
+            let mDate = dMat.getDate();
+
+            let targetMonth, targetYear;
+            if (mDate >= 26) {
+                targetMonth = (mMonth + 1) % 12;
+                targetYear = (targetMonth === 0) ? mYear + 1 : mYear;
+            } else {
+                targetMonth = mMonth;
+                targetYear = mYear;
+            }
+
+            if (targetMonth === cycleMonth && targetYear === cycleYear) {
                 monthlyProfit += profitAmt;
             }
 
