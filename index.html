@@ -182,13 +182,19 @@
             document.getElementById('userDp').src = user.photoURL;
             document.getElementById('auth-screen').style.display = 'none';
             document.getElementById('app-content').style.display = 'block';
+            
+            // Foran local data render karo agar internet slow hai
+            const localData = localStorage.getItem('inpc_cloud_db');
+            if(localData) {
+                allRecords = JSON.parse(localData);
+                renderTables(allRecords);
+            }
+            
             syncFromFirebase();
             
-            // Fix: Application khulte hi aaj ki date set ho aur color check ho
             const todayDate = new Date().toISOString().split('T')[0];
             document.getElementById('pDate').value = todayDate;
             checkHolidayStatus(); 
-
         } else {
             document.getElementById('auth-screen').style.display = 'flex';
             document.getElementById('app-content').style.display = 'none';
@@ -204,28 +210,21 @@
             allRecords = snap.val() ? Object.values(snap.val()) : [];
             localStorage.setItem('inpc_cloud_db', JSON.stringify(allRecords));
             renderTables(allRecords);
-            checkHolidayStatus(); // Data load hone par bhi check kare
+            checkHolidayStatus();
         });
     }
 
     function checkHolidayStatus() {
         const inputDate = document.getElementById('pDate').value;
         if(!inputDate) return;
-
         const btn = document.getElementById('addBtn');
         btn.classList.remove('btn-red', 'btn-yellow');
-
         let d90 = new Date(inputDate); d90.setDate(d90.getDate() + 90);
         const isWeekend90 = (d90.getDay() === 0 || d90.getDay() === 6);
-
         let d91 = new Date(inputDate); d91.setDate(d91.getDate() + 91);
         const isWeekend91 = (d91.getDay() === 0 || d91.getDay() === 6);
-
-        if (isWeekend90) {
-            btn.classList.add('btn-red');
-        } else if (isWeekend91) {
-            btn.classList.add('btn-yellow');
-        }
+        if (isWeekend90) btn.classList.add('btn-red');
+        else if (isWeekend91) btn.classList.add('btn-yellow');
     }
 
     function addEntry() {
@@ -247,6 +246,10 @@
         const filtered = allRecords.filter(r => {
             const matchAmt = amt ? r.amount.toString().includes(amt) : true;
             let dMat = new Date(r.date); dMat.setDate(dMat.getDate() + 90);
+            if (dMat.getDay() === 6) dMat.setDate(dMat.getDate() + 2);
+            else if (dMat.getDay() === 0) dMat.setDate(dMat.getDate() + 1);
+            dMat.setHours(0,0,0,0);
+            
             const isMatured = (dMat - today) < 0;
             const matchStatus = status === 'all' ? true : (status === 'matured' ? isMatured : !isMatured);
             return matchAmt && matchStatus;
@@ -271,7 +274,8 @@
     }
 
     function renderTables(records, isFiltering = false) {
-        const container = document.getElementById('tablesContainer'); container.innerHTML = '';
+        const container = document.getElementById('tablesContainer'); 
+        container.innerHTML = '';
         const alertBox = document.getElementById('maturedAlert');
         let grandMaturedProfit = 0, totalActiveInv = 0, activeCount = 0, monthlyProfit = 0, totalOverallPendingProfit = 0;
         let projProfit = 0, projCount = 0, maturedTodayCount = 0;
@@ -281,6 +285,7 @@
         const next30Days = new Date(); next30Days.setDate(today.getDate() + 30);
         const cutOff = new Date('2025-06-01');
 
+        // Dashboard hamesha All Records se calculate hoga (unless filtering filter ho)
         const calcSource = isFiltering ? allRecords : records;
 
         calcSource.forEach(item => {
@@ -295,28 +300,20 @@
             let diff = Math.round((dMat - today) / 86400000);
             if (diff >= 0) { totalActiveInv += item.amount; activeCount++; totalOverallPendingProfit += profitAmt; }
             if (diff <= 0) grandMaturedProfit += profitAmt;
-
             if (diff === 0) maturedTodayCount++;
-
-            if (diff > 0 && dMat <= next30Days) {
-                projProfit += profitAmt;
-                projCount++;
-            }
+            if (diff > 0 && dMat <= next30Days) { projProfit += profitAmt; projCount++; }
 
             let mMonth = dMat.getMonth(), mYear = dMat.getFullYear(), mDate = dMat.getDate();
             let targetMonth, targetYear;
             if (mDate >= 26) { targetMonth = (mMonth + 1) % 12; targetYear = (targetMonth === 0) ? mYear + 1 : mYear; }
             else { targetMonth = mMonth; targetYear = mYear; }
-
-            if (targetMonth === cycleMonth && targetYear === cycleYear) monthlyProfit += profitAmt;
+            if (targetMonth === today.getMonth() && targetYear === today.getFullYear()) monthlyProfit += profitAmt;
         });
 
         if (maturedTodayCount > 0) {
             alertBox.style.display = 'block';
             alertBox.innerText = `🎉 Alert: ${maturedTodayCount} Certificate(s) maturing today!`;
-        } else {
-            alertBox.style.display = 'none';
-        }
+        } else alertBox.style.display = 'none';
 
         records.forEach(item => {
             let dMat = new Date(item.date); dMat.setDate(dMat.getDate() + 90);
@@ -335,17 +332,12 @@
         Object.keys(grouped).sort().reverse().forEach(year => {
             let yActive = 0, yMaturedProfit = 0, yPendingProfit = 0;
             let html = `<div class="tax-year-container"><div class="tax-year-header">${year}</div><div class="table-wrapper"><table><thead><tr><th>Date</th><th>Amount</th><th>Maturity</th><th>Status</th><th>Day</th><th>Profit</th><th></th></tr></thead><tbody>`;
-            
             grouped[year].sort((a, b) => b.dMat - a.dMat).forEach(r => {
                 if(r.diff >= 0) { yActive += r.amount; yPendingProfit += r.profitAmt; }
-                else { yMaturedProfit += r.profitAmt; }
-
+                else yMaturedProfit += r.profitAmt;
                 let badge = r.diff > 0 ? `<span class="badge running">${r.diff} Days</span>` : (r.diff === 0 ? `<span class="badge today-badge">Today!</span>` : `<span class="badge matured">Matured</span>`);
-                let dayName = r.dMat.toLocaleDateString('en-GB', { weekday: 'long' });
-
-                html += `<tr><td>${new Date(r.date).toLocaleDateString('en-GB')}</td><td>${r.amount.toLocaleString()}</td><td>${r.dMat.toLocaleDateString('en-GB',{day:'2-digit',month:'short'})}</td><td>${badge}</td><td>${dayName}</td><td>${r.profitAmt.toFixed(0)}</td><td><span class="del-icon" onclick="confirmDelete(${r.id})">✕</span></td></tr>`;
+                html += `<tr><td>${new Date(r.date).toLocaleDateString('en-GB')}</td><td>${r.amount.toLocaleString()}</td><td>${r.dMat.toLocaleDateString('en-GB',{day:'2-digit',month:'short'})}</td><td>${badge}</td><td>${r.dMat.toLocaleDateString('en-GB', { weekday: 'long' })}</td><td>${r.profitAmt.toFixed(0)}</td><td><span class="del-icon" onclick="confirmDelete(${r.id})">✕</span></td></tr>`;
             });
-
             container.innerHTML += html + `</tbody></table></div><div class="year-summary-footer">
                 <div class="summary-line"><span>Active Invested:</span><span>${yActive.toLocaleString()}</span></div>
                 <div class="summary-line"><span>Matured Profit:</span><span class="profit-matured">${yMaturedProfit.toLocaleString(undefined,{minimumFractionDigits:2})}</span></div>
