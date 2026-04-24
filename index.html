@@ -28,7 +28,6 @@
         header { background: white; padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
         .user-dp { width: 40px; height: 40px; border-radius: 50%; border: 2px solid var(--accent); object-fit: cover; background: #eee; cursor: pointer; }
 
-        /* Matured Today Alert Style */
         #maturedAlert { display: none; background: #fff3cd; color: #856404; margin: 15px; padding: 12px; border-radius: 8px; border-left: 5px solid var(--gold); font-size: 14px; font-weight: bold; animation: pulse 2s infinite; }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
 
@@ -43,7 +42,6 @@
         .form-section { margin: 0 15px; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
         input, select { width: 100%; padding: 12px; margin-bottom: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 16px; box-sizing: border-box; outline: none; }
         
-        /* Dynamic Button Base Style */
         .add-btn { width: 100%; padding: 14px; background: var(--success); color: white; border: none; border-radius: 8px; font-weight: bold; font-size: 16px; margin-bottom: 10px; transition: 0.3s; }
         .btn-red { background: var(--danger) !important; }
         .btn-yellow { background: var(--warning) !important; }
@@ -185,7 +183,12 @@
             document.getElementById('auth-screen').style.display = 'none';
             document.getElementById('app-content').style.display = 'block';
             syncFromFirebase();
-            checkHolidayStatus(); // Initial Check
+            
+            // Fix: Application khulte hi aaj ki date set ho aur color check ho
+            const todayDate = new Date().toISOString().split('T')[0];
+            document.getElementById('pDate').value = todayDate;
+            checkHolidayStatus(); 
+
         } else {
             document.getElementById('auth-screen').style.display = 'flex';
             document.getElementById('app-content').style.display = 'none';
@@ -201,10 +204,10 @@
             allRecords = snap.val() ? Object.values(snap.val()) : [];
             localStorage.setItem('inpc_cloud_db', JSON.stringify(allRecords));
             renderTables(allRecords);
+            checkHolidayStatus(); // Data load hone par bhi check kare
         });
     }
 
-    // Point 2: Holiday Check Logic for Button Color
     function checkHolidayStatus() {
         const inputDate = document.getElementById('pDate').value;
         if(!inputDate) return;
@@ -212,11 +215,9 @@
         const btn = document.getElementById('addBtn');
         btn.classList.remove('btn-red', 'btn-yellow');
 
-        // Check T+90 (Today's Entry Maturity)
         let d90 = new Date(inputDate); d90.setDate(d90.getDate() + 90);
         const isWeekend90 = (d90.getDay() === 0 || d90.getDay() === 6);
 
-        // Check T+91 (Next Day's Entry Maturity)
         let d91 = new Date(inputDate); d91.setDate(d91.getDate() + 91);
         const isWeekend91 = (d91.getDay() === 0 || d91.getDay() === 6);
 
@@ -280,18 +281,10 @@
         const next30Days = new Date(); next30Days.setDate(today.getDate() + 30);
         const cutOff = new Date('2025-06-01');
 
-        let cycleMonth = today.getMonth();
-        let cycleYear = today.getFullYear();
-        if (today.getDate() >= 26) {
-            cycleMonth = (cycleMonth + 1) % 12;
-            if (cycleMonth === 0) cycleYear++;
-        }
-
         const calcSource = isFiltering ? allRecords : records;
 
         calcSource.forEach(item => {
             let dMat = new Date(item.date); dMat.setDate(dMat.getDate() + 90);
-            // Weekend Adjustment Logic
             if (dMat.getDay() === 6) dMat.setDate(dMat.getDate() + 2);
             else if (dMat.getDay() === 0) dMat.setDate(dMat.getDate() + 1);
             dMat.setHours(0,0,0,0);
@@ -303,7 +296,6 @@
             if (diff >= 0) { totalActiveInv += item.amount; activeCount++; totalOverallPendingProfit += profitAmt; }
             if (diff <= 0) grandMaturedProfit += profitAmt;
 
-            // Point 1: Check if matured today
             if (diff === 0) maturedTodayCount++;
 
             if (diff > 0 && dMat <= next30Days) {
@@ -319,7 +311,6 @@
             if (targetMonth === cycleMonth && targetYear === cycleYear) monthlyProfit += profitAmt;
         });
 
-        // Show/Hide Alert Box
         if (maturedTodayCount > 0) {
             alertBox.style.display = 'block';
             alertBox.innerText = `🎉 Alert: ${maturedTodayCount} Certificate(s) maturing today!`;
@@ -369,7 +360,6 @@
         document.getElementById('currentMonthProfit').innerText = monthlyProfit.toLocaleString(undefined,{minimumFractionDigits:2});
         document.getElementById('projectionProfit').innerText = projProfit.toLocaleString(undefined,{minimumFractionDigits:2});
         document.getElementById('projectionCount').innerText = projCount;
-        if (!isFiltering) document.getElementById('pDate').valueAsDate = new Date();
     }
 </script>
 </body>
