@@ -190,7 +190,6 @@
             document.getElementById('userDp').src = user.photoURL;
             document.getElementById('auth-screen').style.display = 'none';
             document.getElementById('app-content').style.display = 'block';
-            
             const localData = localStorage.getItem('inpc_cloud_db');
             if(localData) {
                 allRecords = JSON.parse(localData);
@@ -270,53 +269,95 @@
         XLSX.writeFile(wb, `INPC_Backup_${new Date().toISOString().split('T')[0]}.xlsx`);
     }
 
-    // New PDF Export Function
+    // Advanced PDF Export with Grouping
     function exportToPDF() {
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF('p', 'mm', 'a4');
-        const today = new Date();
+        const today = new Date(); today.setHours(0,0,0,0);
         const cutOff = new Date('2025-06-01');
 
-        // Styles
-        doc.setFontSize(18);
-        doc.setTextColor(26, 42, 58);
-        doc.text("INPC Portfolio Report", 14, 20);
+        // Main Headers
+        doc.setFontSize(22); doc.setTextColor(26, 42, 58);
+        doc.text("INPC Pro Portfolio Report", 14, 20);
         
-        doc.setFontSize(10);
-        doc.setTextColor(100);
-        doc.text(`Generated on: ${today.toLocaleDateString('en-GB')} at ${today.toLocaleTimeString()}`, 14, 26);
+        doc.setFontSize(10); doc.setTextColor(100);
+        doc.text(`User: ${currentUser.displayName || 'Portfolio Manager'}`, 14, 26);
+        doc.text(`Date: ${new Date().toLocaleString()}`, 14, 30);
 
-        const tableData = allRecords.sort((a,b) => new Date(b.date) - new Date(a.date)).map(r => {
+        // Calculate Totals for Top Summary
+        let grandMatured = 0, next90Profit = 0;
+        const next90Days = new Date(); next90Days.setDate(today.getDate() + 90);
+
+        const pdfGrouped = {};
+        allRecords.forEach(r => {
             let dMat = new Date(r.date); dMat.setDate(dMat.getDate() + 90);
             if (dMat.getDay() === 6) dMat.setDate(dMat.getDate() + 2);
             else if (dMat.getDay() === 0) dMat.setDate(dMat.getDate() + 1);
-            
-            let rate = (dMat < cutOff) ? 4.66 : 2.9955;
-            let profit = (r.amount * (rate / 100)).toFixed(0);
-            let diff = Math.round((dMat - today.setHours(0,0,0,0)) / 86400000);
-            let status = diff > 0 ? `${diff} Days Left` : (diff === 0 ? "MATURED TODAY" : "MATURED");
+            dMat.setHours(0,0,0,0);
 
-            return [
+            let rate = (dMat < cutOff) ? 4.66 : 2.9955;
+            let profit = (r.amount * (rate / 100));
+            let diff = Math.round((dMat - today) / 86400000);
+
+            if (diff <= 0) grandMatured += profit;
+            if (diff > 0 && dMat <= next90Days) next90Profit += profit;
+
+            let year = (dMat.getMonth() >= 6) ? `Tax Year ${dMat.getFullYear()}-${dMat.getFullYear()+1}` : `Tax Year ${dMat.getFullYear()-1}-${dMat.getFullYear()}`;
+            if (!pdfGrouped[year]) pdfGrouped[year] = { records: [], maturedProfit: 0, pendingProfit: 0 };
+            
+            pdfGrouped[year].records.push({ ...r, dMat, profit, diff });
+            if (diff <= 0) pdfGrouped[year].maturedProfit += profit;
+            else pdfGrouped[year].pendingProfit += profit;
+        });
+
+        // Top Summary Boxes
+        doc.setDrawColor(200); doc.setFillColor(248, 249, 250);
+        doc.roundedRect(14, 35, 85, 20, 3, 3, 'FD');
+        doc.roundedRect(105, 35, 90, 20, 3, 3, 'FD');
+
+        doc.setFontSize(9); doc.setTextColor(80);
+        doc.text("GRAND MATURED PROFIT", 18, 42);
+        doc.text("NEXT 90 DAYS PENDING PROFIT", 109, 42);
+
+        doc.setFontSize(14); doc.setTextColor(39, 174, 96);
+        doc.text(`${grandMatured.toLocaleString(undefined,{minimumFractionDigits:2})} PKR`, 18, 50);
+        doc.setTextColor(52, 152, 219);
+        doc.text(`${next90Profit.toLocaleString(undefined,{minimumFractionDigits:2})} PKR`, 109, 50);
+
+        let currentY = 65;
+
+        // Render Tables Grouped by Tax Year
+        Object.keys(pdfGrouped).sort().reverse().forEach(year => {
+            doc.setFontSize(12); doc.setTextColor(26, 42, 58);
+            doc.text(year, 14, currentY);
+            
+            const body = pdfGrouped[year].records.sort((a,b) => b.dMat - a.dMat).map(r => [
                 new Date(r.date).toLocaleDateString('en-GB'),
                 r.amount.toLocaleString(),
-                dMat.toLocaleDateString('en-GB'),
-                dMat.toLocaleDateString('en-GB', {weekday: 'short'}),
-                profit.toLocaleString(),
-                status
-            ];
+                r.dMat.toLocaleDateString('en-GB'),
+                r.dMat.toLocaleDateString('en-GB', {weekday: 'short'}),
+                r.profit.toFixed(0).toLocaleString(),
+                r.diff > 0 ? `${r.diff} Days` : (r.diff === 0 ? "TODAY" : "MATURED")
+            ]);
+
+            doc.autoTable({
+                startY: currentY + 2,
+                head: [['Purchase', 'Amount', 'Maturity', 'Day', 'Profit', 'Status']],
+                body: body,
+                theme: 'grid',
+                headStyles: { fillColor: [44, 62, 80] },
+                styles: { fontSize: 8 },
+                margin: { bottom: 20 }
+            });
+
+            currentY = doc.lastAutoTable.finalY + 8;
+            doc.setFontSize(9); doc.setTextColor(50);
+            doc.text(`Year Matured Profit: ${pdfGrouped[year].maturedProfit.toLocaleString()} | Year Pending: ${pdfGrouped[year].pendingProfit.toLocaleString()}`, 14, currentY - 3);
+            
+            if (currentY > 260) { doc.addPage(); currentY = 20; }
         });
 
-        doc.autoTable({
-            startY: 35,
-            head: [['Purchase', 'Amount (PKR)', 'Maturity', 'Day', 'Profit', 'Status']],
-            body: tableData,
-            theme: 'striped',
-            headStyles: { fillColor: [26, 42, 58], fontSize: 9 },
-            styles: { fontSize: 8 },
-            columnStyles: { 1: { halign: 'right' }, 4: { halign: 'right' } }
-        });
-
-        doc.save(`INPC_Report_${today.toISOString().split('T')[0]}.pdf`);
+        doc.save(`INPC_Full_Report_${today.toISOString().split('T')[0]}.pdf`);
     }
 
     function renderTables(records, isFiltering = false) {
@@ -325,12 +366,10 @@
         const alertBox = document.getElementById('maturedAlert');
         let grandMaturedProfit = 0, totalActiveInv = 0, activeCount = 0, monthlyProfit = 0, totalOverallPendingProfit = 0;
         let projProfit = 0, projCount = 0, maturedTodayCount = 0;
-        
         const grouped = {};
         const today = new Date(); today.setHours(0,0,0,0);
         const next30Days = new Date(); next30Days.setDate(today.getDate() + 30);
         const cutOff = new Date('2025-06-01');
-
         const calcSource = isFiltering ? allRecords : records;
 
         calcSource.forEach(item => {
@@ -345,11 +384,8 @@
             if (diff <= 0) grandMaturedProfit += profitAmt;
             if (diff === 0) maturedTodayCount++;
             if (diff > 0 && dMat <= next30Days) { projProfit += profitAmt; projCount++; }
-            let mMonth = dMat.getMonth(), mYear = dMat.getFullYear(), mDate = dMat.getDate();
-            let targetMonth, targetYear;
-            if (mDate >= 26) { targetMonth = (mMonth + 1) % 12; targetYear = (targetMonth === 0) ? mYear + 1 : mYear; }
-            else { targetMonth = mMonth; targetYear = mYear; }
-            if (targetMonth === today.getMonth() && targetYear === today.getFullYear()) monthlyProfit += profitAmt;
+            let mMonth = dMat.getMonth(), mYear = dMat.getFullYear();
+            if (mMonth === today.getMonth() && mYear === today.getFullYear()) monthlyProfit += profitAmt;
         });
 
         if (maturedTodayCount > 0) { alertBox.style.display = 'block'; alertBox.innerText = `🎉 Alert: ${maturedTodayCount} Certificate(s) maturing today!`; } else alertBox.style.display = 'none';
