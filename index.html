@@ -92,6 +92,7 @@
         <div class="main-card">
             <h3>Matured Profit</h3>
             <div class="value" id="grandProfit">0.00</div>
+            <div class="sub-value">Total Pending Profit: <span id="totalPendingProfit">0.00</span></div>
         </div>
         <div class="main-card blue">
             <h3>Active Invested</h3>
@@ -180,11 +181,10 @@
 
     function renderTables(records) {
         const container = document.getElementById('tablesContainer'); container.innerHTML = '';
-        let grandMaturedProfit = 0, totalActiveInv = 0, activeCount = 0, monthlyProfit = 0;
+        let grandMaturedProfit = 0, totalActiveInv = 0, activeCount = 0, monthlyProfit = 0, totalOverallPendingProfit = 0;
         const grouped = {};
         const today = new Date(); today.setHours(0,0,0,0);
         
-        // Logical logic for 26th to 25th Cycle
         let cycleMonth = today.getMonth();
         let cycleYear = today.getFullYear();
         if (today.getDate() >= 26) {
@@ -196,18 +196,17 @@
 
         records.forEach(item => {
             let dMat = new Date(item.date); dMat.setDate(dMat.getDate() + 90);
-            if (dMat.getDay() === 6) dMat.setDate(dMat.getDate() + 2); // Monday Adjustment
+            if (dMat.getDay() === 6) dMat.setDate(dMat.getDate() + 2);
             else if (dMat.getDay() === 0) dMat.setDate(dMat.getDate() + 1);
             dMat.setHours(0,0,0,0);
 
-            let rate = (dMat < cutOff) ? 4.66 : 2.9955; // Profit Rates Locked
+            let rate = (dMat < cutOff) ? 4.66 : 2.9955;
             let profitAmt = (item.amount * (rate / 100));
             
             let diff = Math.round((dMat - today) / 86400000);
-            if (diff >= 0) { totalActiveInv += item.amount; activeCount++; }
+            if (diff >= 0) { totalActiveInv += item.amount; activeCount++; totalOverallPendingProfit += profitAmt; }
             if (diff <= 0) grandMaturedProfit += profitAmt;
 
-            // Current Cycle Profit Logic (26 to 25)
             let mMonth = dMat.getMonth();
             let mYear = dMat.getFullYear();
             let mDate = dMat.getDate();
@@ -252,6 +251,7 @@
         });
 
         document.getElementById('grandProfit').innerText = grandMaturedProfit.toLocaleString(undefined,{minimumFractionDigits:2});
+        document.getElementById('totalPendingProfit').innerText = totalOverallPendingProfit.toLocaleString(undefined,{minimumFractionDigits:2});
         document.getElementById('activeInv').innerText = totalActiveInv.toLocaleString();
         document.getElementById('activeCount').innerText = activeCount;
         document.getElementById('currentMonthProfit').innerText = monthlyProfit.toLocaleString(undefined,{minimumFractionDigits:2});
