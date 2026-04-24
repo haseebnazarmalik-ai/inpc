@@ -10,7 +10,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-database-compat.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
-        :root { --primary: #1a2a3a; --success: #27ae60; --pending: #90ee90; --danger: #e74c3c; --bg: #f0f2f5; --accent: #3498db; --gold: #f1c40f; }
+        :root { --primary: #1a2a3a; --success: #27ae60; --pending: #90ee90; --danger: #e74c3c; --bg: #f0f2f5; --accent: #3498db; --gold: #f1c40f; --warning: #f39c12; }
         body { font-family: 'Segoe UI', Roboto, sans-serif; background-color: var(--bg); margin: 0; padding: 0; overflow-x: hidden; -webkit-tap-highlight-color: transparent; }
         
         #preloader { position: fixed; top:0; left:0; width:100%; height:100%; background: var(--primary); display: flex; justify-content: center; align-items: center; z-index: 9999; }
@@ -28,6 +28,10 @@
         header { background: white; padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
         .user-dp { width: 40px; height: 40px; border-radius: 50%; border: 2px solid var(--accent); object-fit: cover; background: #eee; cursor: pointer; }
 
+        /* Matured Today Alert Style */
+        #maturedAlert { display: none; background: #fff3cd; color: #856404; margin: 15px; padding: 12px; border-radius: 8px; border-left: 5px solid var(--gold); font-size: 14px; font-weight: bold; animation: pulse 2s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
+
         .main-dashboard { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 15px; }
         .main-card { padding: 15px 10px; border-radius: 12px; text-align: center; color: white; background: var(--primary); display: flex; flex-direction: column; justify-content: center; min-height: 90px; }
         .main-card h3 { font-size: 10px; margin: 0; opacity: 0.7; text-transform: uppercase; }
@@ -38,7 +42,12 @@
 
         .form-section { margin: 0 15px; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
         input, select { width: 100%; padding: 12px; margin-bottom: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 16px; box-sizing: border-box; outline: none; }
-        .add-btn { width: 100%; padding: 14px; background: var(--success); color: white; border: none; border-radius: 8px; font-weight: bold; font-size: 16px; margin-bottom: 10px; }
+        
+        /* Dynamic Button Base Style */
+        .add-btn { width: 100%; padding: 14px; background: var(--success); color: white; border: none; border-radius: 8px; font-weight: bold; font-size: 16px; margin-bottom: 10px; transition: 0.3s; }
+        .btn-red { background: var(--danger) !important; }
+        .btn-yellow { background: var(--warning) !important; }
+
         .export-btn { width: 100%; padding: 10px; background: #34495e; color: white; border: none; border-radius: 8px; font-size: 13px; cursor: pointer; }
 
         .search-section { margin: 15px; display: flex; gap: 8px; }
@@ -95,6 +104,8 @@
         <img id="userDp" class="user-dp" onclick="showLogoutDialog()">
     </header>
 
+    <div id="maturedAlert">🎉 Alert: You have certificates maturing today!</div>
+
     <div class="main-dashboard">
         <div class="main-card">
             <h3>Matured Profit</h3>
@@ -115,9 +126,9 @@
     </div>
 
     <div class="form-section">
-        <input type="date" id="pDate">
+        <input type="date" id="pDate" onchange="checkHolidayStatus()">
         <input type="number" id="pAmount" placeholder="Amount (PKR)" inputmode="decimal">
-        <button class="add-btn" onclick="addEntry()">Add Certificate</button>
+        <button class="add-btn" id="addBtn" onclick="addEntry()">Add Certificate</button>
         <button class="export-btn" onclick="exportToExcel()">💾 Download Excel Backup</button>
     </div>
 
@@ -174,6 +185,7 @@
             document.getElementById('auth-screen').style.display = 'none';
             document.getElementById('app-content').style.display = 'block';
             syncFromFirebase();
+            checkHolidayStatus(); // Initial Check
         } else {
             document.getElementById('auth-screen').style.display = 'flex';
             document.getElementById('app-content').style.display = 'none';
@@ -192,17 +204,40 @@
         });
     }
 
+    // Point 2: Holiday Check Logic for Button Color
+    function checkHolidayStatus() {
+        const inputDate = document.getElementById('pDate').value;
+        if(!inputDate) return;
+
+        const btn = document.getElementById('addBtn');
+        btn.classList.remove('btn-red', 'btn-yellow');
+
+        // Check T+90 (Today's Entry Maturity)
+        let d90 = new Date(inputDate); d90.setDate(d90.getDate() + 90);
+        const isWeekend90 = (d90.getDay() === 0 || d90.getDay() === 6);
+
+        // Check T+91 (Next Day's Entry Maturity)
+        let d91 = new Date(inputDate); d91.setDate(d91.getDate() + 91);
+        const isWeekend91 = (d91.getDay() === 0 || d91.getDay() === 6);
+
+        if (isWeekend90) {
+            btn.classList.add('btn-red');
+        } else if (isWeekend91) {
+            btn.classList.add('btn-yellow');
+        }
+    }
+
     function addEntry() {
         const d = document.getElementById('pDate').value, a = document.getElementById('pAmount').value;
         if (!d || !a) return;
         const id = Date.now();
         db.ref('inpc_records/' + currentUser.uid + '/' + id).set({ id, date: d, amount: parseFloat(a) });
         document.getElementById('pAmount').value = '';
+        checkHolidayStatus();
     }
 
     function confirmDelete(id) { openModal("Delete?", "Remove this certificate permanently?", () => db.ref('inpc_records/' + currentUser.uid + '/' + id).remove()); }
 
-    // Point 1: Filter Logic
     function filterRecords() {
         const amt = document.getElementById('searchAmount').value;
         const status = document.getElementById('filterStatus').value;
@@ -215,10 +250,9 @@
             const matchStatus = status === 'all' ? true : (status === 'matured' ? isMatured : !isMatured);
             return matchAmt && matchStatus;
         });
-        renderTables(filtered, true); // true means skip re-calculating dashboard globals to avoid flicker
+        renderTables(filtered, true);
     }
 
-    // Point 3: Export Logic
     function exportToExcel() {
         const data = allRecords.map(r => {
             let dMat = new Date(r.date); dMat.setDate(dMat.getDate() + 90);
@@ -237,12 +271,14 @@
 
     function renderTables(records, isFiltering = false) {
         const container = document.getElementById('tablesContainer'); container.innerHTML = '';
+        const alertBox = document.getElementById('maturedAlert');
         let grandMaturedProfit = 0, totalActiveInv = 0, activeCount = 0, monthlyProfit = 0, totalOverallPendingProfit = 0;
-        let projProfit = 0, projCount = 0;
+        let projProfit = 0, projCount = 0, maturedTodayCount = 0;
         
         const grouped = {};
         const today = new Date(); today.setHours(0,0,0,0);
         const next30Days = new Date(); next30Days.setDate(today.getDate() + 30);
+        const cutOff = new Date('2025-06-01');
 
         let cycleMonth = today.getMonth();
         let cycleYear = today.getFullYear();
@@ -251,13 +287,11 @@
             if (cycleMonth === 0) cycleYear++;
         }
 
-        const cutOff = new Date('2025-06-01');
-
-        // We always use allRecords for Top Dashboard calculation unless we want it to change with search
         const calcSource = isFiltering ? allRecords : records;
 
         calcSource.forEach(item => {
             let dMat = new Date(item.date); dMat.setDate(dMat.getDate() + 90);
+            // Weekend Adjustment Logic
             if (dMat.getDay() === 6) dMat.setDate(dMat.getDate() + 2);
             else if (dMat.getDay() === 0) dMat.setDate(dMat.getDate() + 1);
             dMat.setHours(0,0,0,0);
@@ -269,31 +303,30 @@
             if (diff >= 0) { totalActiveInv += item.amount; activeCount++; totalOverallPendingProfit += profitAmt; }
             if (diff <= 0) grandMaturedProfit += profitAmt;
 
-            // Point 2: Projection Logic (Next 30 Days)
+            // Point 1: Check if matured today
+            if (diff === 0) maturedTodayCount++;
+
             if (diff > 0 && dMat <= next30Days) {
                 projProfit += profitAmt;
                 projCount++;
             }
 
-            let mMonth = dMat.getMonth();
-            let mYear = dMat.getFullYear();
-            let mDate = dMat.getDate();
-
+            let mMonth = dMat.getMonth(), mYear = dMat.getFullYear(), mDate = dMat.getDate();
             let targetMonth, targetYear;
-            if (mDate >= 26) {
-                targetMonth = (mMonth + 1) % 12;
-                targetYear = (targetMonth === 0) ? mYear + 1 : mYear;
-            } else {
-                targetMonth = mMonth;
-                targetYear = mYear;
-            }
+            if (mDate >= 26) { targetMonth = (mMonth + 1) % 12; targetYear = (targetMonth === 0) ? mYear + 1 : mYear; }
+            else { targetMonth = mMonth; targetYear = mYear; }
 
-            if (targetMonth === cycleMonth && targetYear === cycleYear) {
-                monthlyProfit += profitAmt;
-            }
+            if (targetMonth === cycleMonth && targetYear === cycleYear) monthlyProfit += profitAmt;
         });
 
-        // Use records (filtered or all) for the actual table display
+        // Show/Hide Alert Box
+        if (maturedTodayCount > 0) {
+            alertBox.style.display = 'block';
+            alertBox.innerText = `🎉 Alert: ${maturedTodayCount} Certificate(s) maturing today!`;
+        } else {
+            alertBox.style.display = 'none';
+        }
+
         records.forEach(item => {
             let dMat = new Date(item.date); dMat.setDate(dMat.getDate() + 90);
             if (dMat.getDay() === 6) dMat.setDate(dMat.getDate() + 2);
@@ -329,7 +362,6 @@
             </div></div>`;
         });
 
-        // Update Dashboard Globals
         document.getElementById('grandProfit').innerText = grandMaturedProfit.toLocaleString(undefined,{minimumFractionDigits:2});
         document.getElementById('totalPendingProfit').innerText = totalOverallPendingProfit.toLocaleString(undefined,{minimumFractionDigits:2});
         document.getElementById('activeInv').innerText = totalActiveInv.toLocaleString();
@@ -337,7 +369,7 @@
         document.getElementById('currentMonthProfit').innerText = monthlyProfit.toLocaleString(undefined,{minimumFractionDigits:2});
         document.getElementById('projectionProfit').innerText = projProfit.toLocaleString(undefined,{minimumFractionDigits:2});
         document.getElementById('projectionCount').innerText = projCount;
-        document.getElementById('pDate').valueAsDate = new Date();
+        if (!isFiltering) document.getElementById('pDate').valueAsDate = new Date();
     }
 </script>
 </body>
