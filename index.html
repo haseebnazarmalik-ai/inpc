@@ -8,6 +8,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-database-compat.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
         :root { --primary: #1a2a3a; --success: #27ae60; --pending: #90ee90; --danger: #e74c3c; --bg: #f0f2f5; --accent: #3498db; --gold: #f1c40f; }
         body { font-family: 'Segoe UI', Roboto, sans-serif; background-color: var(--bg); margin: 0; padding: 0; overflow-x: hidden; -webkit-tap-highlight-color: transparent; }
@@ -33,10 +34,16 @@
         .main-card .value { font-size: 18px; font-weight: bold; color: var(--gold); margin-top: 5px; }
         .main-card .sub-value { font-size: 11px; margin-top: 6px; opacity: 0.9; border-top: 1px solid rgba(255,255,255,0.15); padding-top: 5px; }
         .main-card.blue { background: linear-gradient(135deg, var(--accent), #2980b9); }
+        .main-card.green { background: linear-gradient(135deg, #27ae60, #1e8449); grid-column: span 2; }
 
         .form-section { margin: 0 15px; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
-        input { width: 100%; padding: 12px; margin-bottom: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 16px; box-sizing: border-box; outline: none; }
-        .add-btn { width: 100%; padding: 14px; background: var(--success); color: white; border: none; border-radius: 8px; font-weight: bold; font-size: 16px; }
+        input, select { width: 100%; padding: 12px; margin-bottom: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 16px; box-sizing: border-box; outline: none; }
+        .add-btn { width: 100%; padding: 14px; background: var(--success); color: white; border: none; border-radius: 8px; font-weight: bold; font-size: 16px; margin-bottom: 10px; }
+        .export-btn { width: 100%; padding: 10px; background: #34495e; color: white; border: none; border-radius: 8px; font-size: 13px; cursor: pointer; }
+
+        .search-section { margin: 15px; display: flex; gap: 8px; }
+        .search-section input { margin-bottom: 0; flex: 2; }
+        .search-section select { margin-bottom: 0; flex: 1; font-size: 14px; }
 
         .tax-year-container { margin: 25px 15px; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
         .tax-year-header { background: #f8f9fa; padding: 15px; font-weight: bold; color: var(--primary); border-bottom: 1px solid #eee; }
@@ -100,12 +107,27 @@
             <div class="sub-value">Active Certificates: <span id="activeCount">0</span></div>
             <div class="sub-value">Current Month Profit: <span id="currentMonthProfit">0.00</span></div>
         </div>
+        <div class="main-card green">
+            <h3>Next 30 Days Expected Profit</h3>
+            <div class="value" id="projectionProfit">0.00</div>
+            <div class="sub-value">Upcoming Maturities: <span id="projectionCount">0</span></div>
+        </div>
     </div>
 
     <div class="form-section">
         <input type="date" id="pDate">
         <input type="number" id="pAmount" placeholder="Amount (PKR)" inputmode="decimal">
         <button class="add-btn" onclick="addEntry()">Add Certificate</button>
+        <button class="export-btn" onclick="exportToExcel()">💾 Download Excel Backup</button>
+    </div>
+
+    <div class="search-section">
+        <input type="number" id="searchAmount" placeholder="Search Amount..." oninput="filterRecords()">
+        <select id="filterStatus" onchange="filterRecords()">
+            <option value="all">All Status</option>
+            <option value="running">Running</option>
+            <option value="matured">Matured</option>
+        </select>
     </div>
 
     <div id="tablesContainer"></div>
@@ -126,6 +148,7 @@
     const auth = firebase.auth();
     const db = firebase.database();
     let currentUser = null;
+    let allRecords = [];
 
     function openModal(title, msg, onConfirm) {
         document.getElementById('modalTitle').innerText = title;
@@ -163,9 +186,9 @@
 
     function syncFromFirebase() {
         db.ref('inpc_records/' + currentUser.uid).on('value', snap => {
-            const records = snap.val() ? Object.values(snap.val()) : [];
-            localStorage.setItem('inpc_cloud_db', JSON.stringify(records));
-            renderTables(records);
+            allRecords = snap.val() ? Object.values(snap.val()) : [];
+            localStorage.setItem('inpc_cloud_db', JSON.stringify(allRecords));
+            renderTables(allRecords);
         });
     }
 
@@ -179,12 +202,48 @@
 
     function confirmDelete(id) { openModal("Delete?", "Remove this certificate permanently?", () => db.ref('inpc_records/' + currentUser.uid + '/' + id).remove()); }
 
-    function renderTables(records) {
+    // Point 1: Filter Logic
+    function filterRecords() {
+        const amt = document.getElementById('searchAmount').value;
+        const status = document.getElementById('filterStatus').value;
+        const today = new Date(); today.setHours(0,0,0,0);
+
+        const filtered = allRecords.filter(r => {
+            const matchAmt = amt ? r.amount.toString().includes(amt) : true;
+            let dMat = new Date(r.date); dMat.setDate(dMat.getDate() + 90);
+            const isMatured = (dMat - today) < 0;
+            const matchStatus = status === 'all' ? true : (status === 'matured' ? isMatured : !isMatured);
+            return matchAmt && matchStatus;
+        });
+        renderTables(filtered, true); // true means skip re-calculating dashboard globals to avoid flicker
+    }
+
+    // Point 3: Export Logic
+    function exportToExcel() {
+        const data = allRecords.map(r => {
+            let dMat = new Date(r.date); dMat.setDate(dMat.getDate() + 90);
+            return {
+                "Purchase Date": r.date,
+                "Amount (PKR)": r.amount,
+                "Maturity Date": dMat.toLocaleDateString('en-GB'),
+                "Profit Amount": (r.amount * (dMat < new Date('2025-06-01') ? 0.0466 : 0.029955)).toFixed(2)
+            };
+        });
+        const ws = XLSX.utils.json_to_sheet(data);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Certificates");
+        XLSX.writeFile(wb, `INPC_Backup_${new Date().toISOString().split('T')[0]}.xlsx`);
+    }
+
+    function renderTables(records, isFiltering = false) {
         const container = document.getElementById('tablesContainer'); container.innerHTML = '';
         let grandMaturedProfit = 0, totalActiveInv = 0, activeCount = 0, monthlyProfit = 0, totalOverallPendingProfit = 0;
+        let projProfit = 0, projCount = 0;
+        
         const grouped = {};
         const today = new Date(); today.setHours(0,0,0,0);
-        
+        const next30Days = new Date(); next30Days.setDate(today.getDate() + 30);
+
         let cycleMonth = today.getMonth();
         let cycleYear = today.getFullYear();
         if (today.getDate() >= 26) {
@@ -194,7 +253,10 @@
 
         const cutOff = new Date('2025-06-01');
 
-        records.forEach(item => {
+        // We always use allRecords for Top Dashboard calculation unless we want it to change with search
+        const calcSource = isFiltering ? allRecords : records;
+
+        calcSource.forEach(item => {
             let dMat = new Date(item.date); dMat.setDate(dMat.getDate() + 90);
             if (dMat.getDay() === 6) dMat.setDate(dMat.getDate() + 2);
             else if (dMat.getDay() === 0) dMat.setDate(dMat.getDate() + 1);
@@ -206,6 +268,12 @@
             let diff = Math.round((dMat - today) / 86400000);
             if (diff >= 0) { totalActiveInv += item.amount; activeCount++; totalOverallPendingProfit += profitAmt; }
             if (diff <= 0) grandMaturedProfit += profitAmt;
+
+            // Point 2: Projection Logic (Next 30 Days)
+            if (diff > 0 && dMat <= next30Days) {
+                projProfit += profitAmt;
+                projCount++;
+            }
 
             let mMonth = dMat.getMonth();
             let mYear = dMat.getFullYear();
@@ -223,6 +291,17 @@
             if (targetMonth === cycleMonth && targetYear === cycleYear) {
                 monthlyProfit += profitAmt;
             }
+        });
+
+        // Use records (filtered or all) for the actual table display
+        records.forEach(item => {
+            let dMat = new Date(item.date); dMat.setDate(dMat.getDate() + 90);
+            if (dMat.getDay() === 6) dMat.setDate(dMat.getDate() + 2);
+            else if (dMat.getDay() === 0) dMat.setDate(dMat.getDate() + 1);
+            dMat.setHours(0,0,0,0);
+            let rate = (dMat < cutOff) ? 4.66 : 2.9955;
+            let profitAmt = (item.amount * (rate / 100));
+            let diff = Math.round((dMat - today) / 86400000);
 
             let year = (dMat.getMonth() >= 6) ? `Tax Year ${dMat.getFullYear()}-${dMat.getFullYear()+1}` : `Tax Year ${dMat.getFullYear()-1}-${dMat.getFullYear()}`;
             if (!grouped[year]) grouped[year] = [];
@@ -250,11 +329,14 @@
             </div></div>`;
         });
 
+        // Update Dashboard Globals
         document.getElementById('grandProfit').innerText = grandMaturedProfit.toLocaleString(undefined,{minimumFractionDigits:2});
         document.getElementById('totalPendingProfit').innerText = totalOverallPendingProfit.toLocaleString(undefined,{minimumFractionDigits:2});
         document.getElementById('activeInv').innerText = totalActiveInv.toLocaleString();
         document.getElementById('activeCount').innerText = activeCount;
         document.getElementById('currentMonthProfit').innerText = monthlyProfit.toLocaleString(undefined,{minimumFractionDigits:2});
+        document.getElementById('projectionProfit').innerText = projProfit.toLocaleString(undefined,{minimumFractionDigits:2});
+        document.getElementById('projectionCount').innerText = projCount;
         document.getElementById('pDate').valueAsDate = new Date();
     }
 </script>
