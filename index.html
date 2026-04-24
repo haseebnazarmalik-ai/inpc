@@ -9,6 +9,9 @@
     <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-database-compat.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+    
     <style>
         :root { --primary: #1a2a3a; --success: #27ae60; --pending: #90ee90; --danger: #e74c3c; --bg: #f0f2f5; --accent: #3498db; --gold: #f1c40f; --warning: #f39c12; }
         body { font-family: 'Segoe UI', Roboto, sans-serif; background-color: var(--bg); margin: 0; padding: 0; overflow-x: hidden; -webkit-tap-highlight-color: transparent; }
@@ -46,7 +49,9 @@
         .btn-red { background: var(--danger) !important; }
         .btn-yellow { background: var(--warning) !important; }
 
-        .export-btn { width: 100%; padding: 10px; background: #34495e; color: white; border: none; border-radius: 8px; font-size: 13px; cursor: pointer; }
+        .export-group { display: flex; gap: 8px; margin-top: 5px; }
+        .export-btn { flex: 1; padding: 10px; background: #34495e; color: white; border: none; border-radius: 8px; font-size: 13px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 5px; }
+        .export-pdf { background: #c0392b; }
 
         .search-section { margin: 15px; display: flex; gap: 8px; }
         .search-section input { margin-bottom: 0; flex: 2; }
@@ -127,7 +132,10 @@
         <input type="date" id="pDate" onchange="checkHolidayStatus()">
         <input type="number" id="pAmount" placeholder="Amount (PKR)" inputmode="decimal">
         <button class="add-btn" id="addBtn" onclick="addEntry()">Add Certificate</button>
-        <button class="export-btn" onclick="exportToExcel()">💾 Download Excel Backup</button>
+        <div class="export-group">
+            <button class="export-btn" onclick="exportToExcel()">📊 Excel</button>
+            <button class="export-btn export-pdf" onclick="exportToPDF()">📄 PDF Backup</button>
+        </div>
     </div>
 
     <div class="search-section">
@@ -183,15 +191,12 @@
             document.getElementById('auth-screen').style.display = 'none';
             document.getElementById('app-content').style.display = 'block';
             
-            // Foran local data render karo agar internet slow hai
             const localData = localStorage.getItem('inpc_cloud_db');
             if(localData) {
                 allRecords = JSON.parse(localData);
                 renderTables(allRecords);
             }
-            
             syncFromFirebase();
-            
             const todayDate = new Date().toISOString().split('T')[0];
             document.getElementById('pDate').value = todayDate;
             checkHolidayStatus(); 
@@ -242,14 +247,11 @@
         const amt = document.getElementById('searchAmount').value;
         const status = document.getElementById('filterStatus').value;
         const today = new Date(); today.setHours(0,0,0,0);
-
         const filtered = allRecords.filter(r => {
             const matchAmt = amt ? r.amount.toString().includes(amt) : true;
             let dMat = new Date(r.date); dMat.setDate(dMat.getDate() + 90);
             if (dMat.getDay() === 6) dMat.setDate(dMat.getDate() + 2);
             else if (dMat.getDay() === 0) dMat.setDate(dMat.getDate() + 1);
-            dMat.setHours(0,0,0,0);
-            
             const isMatured = (dMat - today) < 0;
             const matchStatus = status === 'all' ? true : (status === 'matured' ? isMatured : !isMatured);
             return matchAmt && matchStatus;
@@ -260,17 +262,61 @@
     function exportToExcel() {
         const data = allRecords.map(r => {
             let dMat = new Date(r.date); dMat.setDate(dMat.getDate() + 90);
-            return {
-                "Purchase Date": r.date,
-                "Amount (PKR)": r.amount,
-                "Maturity Date": dMat.toLocaleDateString('en-GB'),
-                "Profit Amount": (r.amount * (dMat < new Date('2025-06-01') ? 0.0466 : 0.029955)).toFixed(2)
-            };
+            return { "Purchase Date": r.date, "Amount (PKR)": r.amount, "Maturity Date": dMat.toLocaleDateString('en-GB'), "Profit Amount": (r.amount * (dMat < new Date('2025-06-01') ? 0.0466 : 0.029955)).toFixed(2) };
         });
         const ws = XLSX.utils.json_to_sheet(data);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "Certificates");
         XLSX.writeFile(wb, `INPC_Backup_${new Date().toISOString().split('T')[0]}.xlsx`);
+    }
+
+    // New PDF Export Function
+    function exportToPDF() {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF('p', 'mm', 'a4');
+        const today = new Date();
+        const cutOff = new Date('2025-06-01');
+
+        // Styles
+        doc.setFontSize(18);
+        doc.setTextColor(26, 42, 58);
+        doc.text("INPC Portfolio Report", 14, 20);
+        
+        doc.setFontSize(10);
+        doc.setTextColor(100);
+        doc.text(`Generated on: ${today.toLocaleDateString('en-GB')} at ${today.toLocaleTimeString()}`, 14, 26);
+
+        const tableData = allRecords.sort((a,b) => new Date(b.date) - new Date(a.date)).map(r => {
+            let dMat = new Date(r.date); dMat.setDate(dMat.getDate() + 90);
+            if (dMat.getDay() === 6) dMat.setDate(dMat.getDate() + 2);
+            else if (dMat.getDay() === 0) dMat.setDate(dMat.getDate() + 1);
+            
+            let rate = (dMat < cutOff) ? 4.66 : 2.9955;
+            let profit = (r.amount * (rate / 100)).toFixed(0);
+            let diff = Math.round((dMat - today.setHours(0,0,0,0)) / 86400000);
+            let status = diff > 0 ? `${diff} Days Left` : (diff === 0 ? "MATURED TODAY" : "MATURED");
+
+            return [
+                new Date(r.date).toLocaleDateString('en-GB'),
+                r.amount.toLocaleString(),
+                dMat.toLocaleDateString('en-GB'),
+                dMat.toLocaleDateString('en-GB', {weekday: 'short'}),
+                profit.toLocaleString(),
+                status
+            ];
+        });
+
+        doc.autoTable({
+            startY: 35,
+            head: [['Purchase', 'Amount (PKR)', 'Maturity', 'Day', 'Profit', 'Status']],
+            body: tableData,
+            theme: 'striped',
+            headStyles: { fillColor: [26, 42, 58], fontSize: 9 },
+            styles: { fontSize: 8 },
+            columnStyles: { 1: { halign: 'right' }, 4: { halign: 'right' } }
+        });
+
+        doc.save(`INPC_Report_${today.toISOString().split('T')[0]}.pdf`);
     }
 
     function renderTables(records, isFiltering = false) {
@@ -285,7 +331,6 @@
         const next30Days = new Date(); next30Days.setDate(today.getDate() + 30);
         const cutOff = new Date('2025-06-01');
 
-        // Dashboard hamesha All Records se calculate hoga (unless filtering filter ho)
         const calcSource = isFiltering ? allRecords : records;
 
         calcSource.forEach(item => {
@@ -293,16 +338,13 @@
             if (dMat.getDay() === 6) dMat.setDate(dMat.getDate() + 2);
             else if (dMat.getDay() === 0) dMat.setDate(dMat.getDate() + 1);
             dMat.setHours(0,0,0,0);
-
             let rate = (dMat < cutOff) ? 4.66 : 2.9955;
             let profitAmt = (item.amount * (rate / 100));
-            
             let diff = Math.round((dMat - today) / 86400000);
             if (diff >= 0) { totalActiveInv += item.amount; activeCount++; totalOverallPendingProfit += profitAmt; }
             if (diff <= 0) grandMaturedProfit += profitAmt;
             if (diff === 0) maturedTodayCount++;
             if (diff > 0 && dMat <= next30Days) { projProfit += profitAmt; projCount++; }
-
             let mMonth = dMat.getMonth(), mYear = dMat.getFullYear(), mDate = dMat.getDate();
             let targetMonth, targetYear;
             if (mDate >= 26) { targetMonth = (mMonth + 1) % 12; targetYear = (targetMonth === 0) ? mYear + 1 : mYear; }
@@ -310,10 +352,7 @@
             if (targetMonth === today.getMonth() && targetYear === today.getFullYear()) monthlyProfit += profitAmt;
         });
 
-        if (maturedTodayCount > 0) {
-            alertBox.style.display = 'block';
-            alertBox.innerText = `🎉 Alert: ${maturedTodayCount} Certificate(s) maturing today!`;
-        } else alertBox.style.display = 'none';
+        if (maturedTodayCount > 0) { alertBox.style.display = 'block'; alertBox.innerText = `🎉 Alert: ${maturedTodayCount} Certificate(s) maturing today!`; } else alertBox.style.display = 'none';
 
         records.forEach(item => {
             let dMat = new Date(item.date); dMat.setDate(dMat.getDate() + 90);
@@ -323,7 +362,6 @@
             let rate = (dMat < cutOff) ? 4.66 : 2.9955;
             let profitAmt = (item.amount * (rate / 100));
             let diff = Math.round((dMat - today) / 86400000);
-
             let year = (dMat.getMonth() >= 6) ? `Tax Year ${dMat.getFullYear()}-${dMat.getFullYear()+1}` : `Tax Year ${dMat.getFullYear()-1}-${dMat.getFullYear()}`;
             if (!grouped[year]) grouped[year] = [];
             grouped[year].push({ ...item, dMat, diff, profitAmt });
